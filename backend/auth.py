@@ -50,24 +50,26 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(dk.hex(), dk_hex)
 
 
-def make_token(user_id: int) -> str:
-    payload = f"{user_id}.{int(time.time())}"
+def make_token(user_id: int, version: int = 0) -> str:
+    """Token = uid.version.issued.sig. Tăng User.token_version để thu hồi mọi phiên đang mở."""
+    payload = f"{user_id}.{version}.{int(time.time())}"
     sig = hmac.new(SECRET, payload.encode(), hashlib.sha256).hexdigest()
     return base64.urlsafe_b64encode(f"{payload}.{sig}".encode()).decode()
 
 
-def read_token(token: str) -> int | None:
+def read_token(token: str) -> tuple[int, int] | None:
+    """Trả về (user_id, token_version) nếu chữ ký hợp lệ và chưa hết hạn."""
     try:
         raw = base64.urlsafe_b64decode(token.encode()).decode()
-        uid, issued, sig = raw.split(".")
+        uid, ver, issued, sig = raw.split(".")
     except Exception:
         return None
-    expected = hmac.new(SECRET, f"{uid}.{issued}".encode(), hashlib.sha256).hexdigest()
+    expected = hmac.new(SECRET, f"{uid}.{ver}.{issued}".encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(sig, expected):
         return None
     if time.time() - int(issued) > TOKEN_TTL_SECONDS:
         return None
-    return int(uid)
+    return int(uid), int(ver)
 
 
 _bearer = HTTPBearer(auto_error=False)
@@ -79,9 +81,9 @@ def current_user(
 ) -> User:
     if not creds:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Vui lòng đăng nhập")
-    uid = read_token(creds.credentials)
-    user = db.get(User, uid) if uid else None
-    if not user or not user.is_active:
+    parsed = read_token(creds.credentials)
+    user = db.get(User, parsed[0]) if parsed else None
+    if not user or not user.is_active or (user.token_version or 0) != parsed[1]:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
     return user
 

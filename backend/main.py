@@ -9,6 +9,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import router
+from .users_api import router as users_router
 from .database import Base, SessionLocal, engine
 from .state import build_state
 from .ws_manager import manager
@@ -37,6 +38,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(router)
+app.include_router(users_router)
 
 
 @app.get("/", include_in_schema=False)

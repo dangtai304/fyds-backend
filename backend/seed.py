@@ -18,7 +18,7 @@ from .models import Bay, Forklift, Role, User
 
 USERS = [
     ("admin", "admin123", "Quản trị hệ thống", Role.ADMIN, None),
-    ("dieuphoi", "dieuphoi123", "Trưởng ca điều phối", Role.DISPATCHER, "CA1"),
+    ("dieuphoi", "dieuphoi123", "Control Tower ca 1", Role.DISPATCHER, "CA1"),
     ("baove1", "baove123", "Bảo vệ Cổng 1", Role.GATE_SECURITY, "CA1"),
     ("baove2", "baove123", "Bảo vệ Cổng 2", Role.GATE_SECURITY, "CA1"),
     ("xenang1", "xenang123", "Nguyễn Văn An", Role.FORKLIFT_OPERATOR, "CA1"),
@@ -53,7 +53,7 @@ def seed(demo: bool = False) -> None:
         for username, pw, name, role, shift in USERS:
             if not db.scalar(select(User).where(User.username == username)):
                 db.add(User(username=username, password_hash=hash_password(pw), full_name=name,
-                            role=role.value, shift=shift))
+                            role=role.value, shift=shift, token_version=0, created_at=now()))
         for code, name, bay_type in BAYS:
             if not db.scalar(select(Bay).where(Bay.bay_code == code)):
                 db.add(Bay(bay_code=code, name=name, bay_type=bay_type, status="EMPTY"))

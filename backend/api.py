@@ -64,9 +64,13 @@ def ensure_operator_owns(user: User, forklift: Forklift | None) -> None:
 @router.post("/auth/login")
 def login(body: LoginIn, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.username == body.username.strip().lower()))
-    if not user or not user.is_active or not verify_password(body.password, user.password_hash):
+    if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sai tên đăng nhập hoặc mật khẩu")
-    return {"token": make_token(user.id), "user": user_dict(user)}
+    if not user.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Tài khoản đã bị khóa — liên hệ Quản trị")
+    user.last_login_at = d.now()
+    db.commit()
+    return {"token": make_token(user.id, user.token_version or 0), "user": user_dict(user)}
 
 
 @router.get("/me")

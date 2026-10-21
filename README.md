@@ -19,7 +19,18 @@ docker compose up -d --build
 - WebSocket: `ws://localhost:8000/ws`
 - Bỏ `--demo` khi chạy thật (không tạo 6 xe mẫu).
 
-Tài khoản mẫu: `dieuphoi/dieuphoi123` (điều phối) · `baove1/baove123` (bảo vệ) · `xenang1..3/xenang123` (lái xe nâng) · `admin/admin123`. **Đổi mật khẩu trước khi chạy thật.**
+Tài khoản mẫu: `dieuphoi/dieuphoi123` (Control Tower) · `baove1/baove123` (bảo vệ) · `xenang1..3/xenang123` (lái xe nâng) · `admin/admin123`. **Đổi mật khẩu trước khi chạy thật.**
+
+## Vai trò & phân quyền
+
+| Vai trò (`role`) | Tên hiển thị | Được làm |
+|---|---|---|
+| `FORKLIFT_OPERATOR` | Lái xe nâng | Nhận xe nâng, bắt đầu / hoàn thành bốc dỡ **chỉ trên lệnh của xe nâng mình**, tạm dừng / báo sự cố |
+| `GATE_SECURITY` | Bảo vệ | Check-in, check-out |
+| `DISPATCHER` | Control Tower | Mọi thao tác điều phối: override ưu tiên, gọi thủ công, đổi bay, hủy, bảo trì bay, tạm dừng xe nâng, xem nhật ký |
+| `ADMIN` | Admin | Toàn quyền + quản lý người dùng |
+
+Khóa tài khoản, đổi vai trò, đặt lại mật khẩu hay tự đổi mật khẩu đều tăng `users.token_version` → **mọi phiên cũ của người đó mất hiệu lực ngay** (frontend tự về trang đăng nhập trong ≤ 60 giây). Không thể tự khóa / tự đổi vai trò của mình, và luôn phải còn ít nhất 1 Admin đang hoạt động. Mọi thay đổi tài khoản ghi vào nhật ký (`USER_CREATE`, `USER_UPDATE`, `USER_PASSWORD_RESET`, `USER_PASSWORD_CHANGE`).
 
 ## Cấu hình (biến môi trường)
 
@@ -50,6 +61,11 @@ Tài khoản mẫu: `dieuphoi/dieuphoi123` (điều phối) · `baove1/baove123`
 | POST | `/api/trips/{id}/reassign` | điều phối | `{bay_id, reason}` — gọi thủ công / đổi bay |
 | POST | `/api/trips/{id}/cancel` | điều phối | `{reason}` |
 | POST | `/api/bays/{id}/status` | điều phối | `{status: EMPTY\|MAINTENANCE, reason}` |
+| GET | `/api/users` | admin | Danh sách người dùng (không trả mật khẩu) |
+| POST | `/api/users` | admin | `{username, full_name, role, shift, password}` tạo tài khoản |
+| POST | `/api/users/{id}` | admin | `{full_name?, role?, shift?, is_active?}` sửa / khóa / mở khóa |
+| POST | `/api/users/{id}/password` | admin | `{password}` đặt lại mật khẩu |
+| POST | `/api/me/password` | đã đăng nhập | `{current_password, new_password}` → token mới |
 
 `ADMIN` được làm mọi thao tác. Lý do bắt buộc ≥ 5 ký tự (thiếu → 422).
 
@@ -70,7 +86,8 @@ Sửa trong `COMPATIBILITY`. **Vi phạm FIFO** = lượt gọi vượt xe đế
 ## Cấu trúc
 
 ```
-backend/    main.py (app, CORS, /ws) · api.py (REST) · dispatcher.py (FIFO, chuyển trạng thái)
+backend/    main.py (app, CORS, /ws) · api.py (REST điều phối) · users_api.py (quản lý người dùng)
+            dispatcher.py (FIFO, chuyển trạng thái)
             models.py · state.py (snapshot + KPI) · ws_manager.py · auth.py · seed.py
 migrations/ Alembic
 tests/      pytest end-to-end (HTTP + WebSocket)
@@ -85,4 +102,4 @@ pip install -r requirements.txt && pytest -q
 ## Giới hạn
 
 - Khóa điều phối nằm trong 1 tiến trình → chạy **1 worker uvicorn**. Nhiều worker cần `SELECT … FOR UPDATE` (PostgreSQL) + pub/sub (Redis) cho WebSocket.
-- Chưa có API quản trị người dùng/bay/xe nâng, báo cáo lịch sử, xuất Excel.
+- Chưa có API quản trị danh mục bay/xe nâng, báo cáo lịch sử, xuất Excel.

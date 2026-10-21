@@ -96,6 +96,10 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(30))
     shift: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
+    # Tăng khi khóa tài khoản / đặt lại mật khẩu / đổi vai trò -> mọi token cũ mất hiệu lực.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class Bay(Base):
