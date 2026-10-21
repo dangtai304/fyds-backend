@@ -1,0 +1,27 @@
+# Chỉ chạy backend (API + WebSocket) tại http://<ip>:8000
+# Chạy cả hệ thống: dùng docker-compose.yml trong repo fyds-frontend.
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      FYDS_DATABASE_URL: sqlite:////data/fyds.db
+      FYDS_SECRET: "doi-chuoi-bi-mat-nay-truoc-khi-chay-that"
+      FYDS_CORS_ORIGINS: "http://localhost:5173,http://localhost:4173"
+      SEED_ARGS: "--demo"          # bỏ trống khi chạy thật
+      # FYDS_REQUIRE_OPERATOR: "1" # chỉ giao lệnh cho xe nâng có tài xế đăng nhập
+    volumes:
+      - fyds-data:/data
+
+  # --- Tùy chọn PostgreSQL: bỏ comment, đổi FYDS_DATABASE_URL thành
+  #     postgresql+psycopg://fyds:fyds@db:5432/fyds  và thêm psycopg[binary] vào requirements.txt
+  # db:
+  #   image: postgres:16
+  #   environment: { POSTGRES_USER: fyds, POSTGRES_PASSWORD: fyds, POSTGRES_DB: fyds }
+  #   volumes: [pg-data:/var/lib/postgresql/data]
+
+volumes:
+  fyds-data: {}
+  # pg-data: {}
