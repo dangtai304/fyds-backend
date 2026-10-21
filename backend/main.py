@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -16,10 +17,24 @@ from .ws_manager import manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-# Danh sách origin của frontend, phân tách bằng dấu phẩy. "*" = cho phép tất cả (chỉ dùng khi thử nghiệm).
-CORS_ORIGINS = [o.strip() for o in os.getenv(
+# Origin của frontend được gọi API trực tiếp, phân tách bằng dấu phẩy.
+CORS_ORIGINS = [o.strip().rstrip("/") for o in os.getenv(
     "FYDS_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173"
 ).split(",") if o.strip()]
+# Regex cho origin động, ví dụ mọi bản preview Vercel của project:
+#   ^https://fyds-frontend(-[a-z0-9-]+)?\.vercel\.app$
+CORS_ORIGIN_REGEX = os.getenv("FYDS_CORS_ORIGIN_REGEX") or None
+_origin_re = re.compile(CORS_ORIGIN_REGEX) if CORS_ORIGIN_REGEX else None
+
+
+def origin_allowed(origin: str | None) -> bool:
+    """WebSocket không đi qua CORS nên tự kiểm Origin. Không có Origin (TV app, script nội bộ) thì cho qua."""
+    if not origin:
+        return True
+    origin = origin.rstrip("/")
+    if "*" in CORS_ORIGINS or origin in CORS_ORIGINS:
+        return True
+    return bool(_origin_re and _origin_re.fullmatch(origin))
 
 
 @asynccontextmanager
@@ -33,6 +48,7 @@ app = FastAPI(title="FYDS API - Điều phối xe & xe nâng", version="1.1.0", 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=False,  # token đi qua header Authorization, không dùng cookie
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
@@ -53,6 +69,9 @@ def healthz():
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    if not origin_allowed(ws.headers.get("origin")):
+        await ws.close(code=1008)  # policy violation
+        return
     await manager.connect(ws)
     try:
         with SessionLocal() as db:

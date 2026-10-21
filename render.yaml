@@ -1,0 +1,43 @@
+# Render Blueprint — tạo backend + Postgres bằng 1 lần bấm:
+#   Render Dashboard → New → Blueprint → chọn repo dangtai304/fyds-backend
+#
+# Gói free phù hợp chạy thử (pilot). Trước khi dùng thật ở nhà máy, nâng cấp:
+#   - Postgres free hết hạn sau 30 ngày (bị xóa nếu không nâng cấp) → đổi plan database sang gói trả phí.
+#   - Web service free ngủ sau 15 phút không có request / tin WebSocket; TV & tablet đang mở sẽ giữ nó thức,
+#     nhưng sau đêm không ai mở, lần đầu vào sẽ chờ ~1 phút → đổi plan web sang gói trả phí.
+databases:
+  - name: fyds-db
+    plan: free
+    region: singapore          # gần Việt Nam nhất; không đổi được sau khi tạo
+    databaseName: fyds
+    user: fyds
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: fyds-backend         # => https://fyds-backend.onrender.com (nếu tên còn trống)
+    runtime: python
+    plan: free
+    region: singapore          # phải cùng region với database
+    buildCommand: pip install -r requirements.txt
+    # Migration + seed chạy mỗi lần khởi động (đều idempotent). 1 worker: khóa điều phối nằm trong tiến trình.
+    startCommand: alembic upgrade head && python -m backend.seed && uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: TZ                # giờ Việt Nam cho thống kê "hôm nay" và mốc thời gian
+        value: Asia/Ho_Chi_Minh
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fyds-db
+          property: connectionString
+      - key: FYDS_SECRET       # khóa ký token đăng nhập
+        generateValue: true
+      - key: FYDS_ADMIN_PASSWORD   # Render hỏi khi tạo Blueprint — mật khẩu tài khoản "admin" (≥ 10 ký tự)
+        sync: false
+      - key: FYDS_CORS_ORIGINS     # thêm tên miền riêng của frontend (nếu có), phân tách bằng dấu phẩy
+        value: http://localhost:5173
+      - key: FYDS_CORS_ORIGIN_REGEX  # mọi bản production + preview của project Vercel "fyds-frontend"
+        value: ^https://fyds-frontend(-[a-z0-9-]+)?\.vercel\.app$

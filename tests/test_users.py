@@ -1,10 +1,4 @@
 """Kiểm thử quản lý người dùng & phân quyền theo vai trò."""
-import os
-import tempfile
-
-if "FYDS_DATABASE_URL" not in os.environ:
-    os.environ["FYDS_DATABASE_URL"] = f"sqlite:///{tempfile.mkdtemp()}/test.db"
-os.environ.setdefault("FYDS_SECRET", "test-secret")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

@@ -22,7 +22,6 @@ def trip_dict(t: Trip) -> dict:
         "ticket_short": short_ticket(t.ticket_number),
         "license_plate": t.license_plate,
         "carrier_name": t.carrier_name,
-        "driver_phone": t.driver_phone,
         "movement_type": t.movement_type,
         "vehicle_type": t.vehicle_type,
         "cargo_type": t.cargo_type,

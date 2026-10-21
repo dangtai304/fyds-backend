@@ -2,8 +2,8 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0
 alembic>=1.13
-# Dùng PostgreSQL: bỏ comment dòng dưới
-# psycopg[binary]>=3.2
+# PostgreSQL (Render, production)
+psycopg[binary]>=3.2
 # Kiểm thử
 pytest>=8
 httpx>=0.27

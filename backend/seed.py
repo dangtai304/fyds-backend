@@ -3,9 +3,15 @@
     python -m backend.seed           # dữ liệu nền
     python -m backend.seed --demo    # thêm 6 xe tải đang chờ để chạy thử
     python -m backend.seed --create  # tạo bảng bằng create_all (khi không dùng Alembic)
+
+Chế độ production: đặt FYDS_ADMIN_PASSWORD (và tùy chọn FYDS_ADMIN_USERNAME, mặc định "admin").
+Khi đó CHỈ tạo tài khoản admin với mật khẩu đó + bay + xe nâng; KHÔNG tạo các tài khoản mẫu
+(dieuphoi/baove/xenang với mật khẩu công khai). Admin tự tạo người dùng thật trên trang Quản lý người dùng.
+Mật khẩu admin chỉ dùng khi tạo lần đầu — đổi sau đó trên giao diện, không bị seed ghi đè.
 """
 from __future__ import annotations
 
+import os
 import sys
 from datetime import timedelta
 
@@ -49,8 +55,15 @@ DEMO_TRUCKS = [
 
 
 def seed(demo: bool = False) -> None:
+    admin_pw = os.getenv("FYDS_ADMIN_PASSWORD")
+    if admin_pw:
+        if len(admin_pw) < 10:
+            raise SystemExit("FYDS_ADMIN_PASSWORD cần tối thiểu 10 ký tự")
+        users = [(os.getenv("FYDS_ADMIN_USERNAME", "admin").strip().lower(), admin_pw, "Quản trị hệ thống", Role.ADMIN, None)]
+    else:
+        users = USERS
     with SessionLocal() as db:
-        for username, pw, name, role, shift in USERS:
+        for username, pw, name, role, shift in users:
             if not db.scalar(select(User).where(User.username == username)):
                 db.add(User(username=username, password_hash=hash_password(pw), full_name=name,
                             role=role.value, shift=shift, token_version=0, created_at=now()))
@@ -75,7 +88,8 @@ def seed(demo: bool = False) -> None:
                     print(f"  bỏ qua {plate}: {e}")
             try_dispatch(db)
             db.commit()
-    print("Seed xong." + (" Đã thêm xe demo." if demo else ""))
+    mode = "production (chỉ tài khoản admin)" if admin_pw else "pilot (tài khoản mẫu)"
+    print(f"Seed xong — chế độ {mode}." + (" Đã thêm xe demo." if demo else ""))
 
 
 if __name__ == "__main__":

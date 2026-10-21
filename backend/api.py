@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -61,11 +62,43 @@ def ensure_operator_owns(user: User, forklift: Forklift | None) -> None:
 
 # ------------------------------------------------------------------ auth
 
+# Chống dò mật khẩu (lưu trong bộ nhớ — đủ cho 1 tiến trình uvicorn):
+#  - tối đa LOGIN_MAX_FAILS lần sai / LOGIN_WINDOW giây cho mỗi (IP, tài khoản)
+#  - và trần LOGIN_MAX_FAILS_USER cho mỗi tài khoản bất kể IP (IP sau proxy có thể bị giả mạo)
+LOGIN_MAX_FAILS = 8
+LOGIN_MAX_FAILS_USER = 20
+LOGIN_WINDOW = 300
+_login_fails: dict[tuple[str, str], list[float]] = {}
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")  # Render / nginx đứng trước
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")
+
+
+def _recent(key: tuple[str, str], t: float) -> list[float]:
+    return [x for x in _login_fails.get(key, []) if t - x < LOGIN_WINDOW]
+
+
 @router.post("/auth/login")
-def login(body: LoginIn, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.username == body.username.strip().lower()))
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    username = body.username.strip().lower()
+    key, ukey = (_client_ip(request), username), ("*", username)
+    t = time.monotonic()
+    fails, ufails = _recent(key, t), _recent(ukey, t)
+    blocked = fails if len(fails) >= LOGIN_MAX_FAILS else ufails if len(ufails) >= LOGIN_MAX_FAILS_USER else None
+    if blocked:
+        wait = int(LOGIN_WINDOW - (t - blocked[0])) // 60 + 1
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"Sai mật khẩu quá nhiều lần — thử lại sau {wait} phút")
+    user = db.scalar(select(User).where(User.username == username))
     if not user or not verify_password(body.password, user.password_hash):
+        if len(_login_fails) > 10_000:  # không để bộ nhớ phình vô hạn
+            _login_fails.clear()
+        _login_fails[key] = fails + [t]
+        _login_fails[ukey] = ufails + [t]
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sai tên đăng nhập hoặc mật khẩu")
+    _login_fails.pop(key, None)
+    _login_fails.pop(ukey, None)
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Tài khoản đã bị khóa — liên hệ Quản trị")
     user.last_login_at = d.now()

@@ -2,12 +2,6 @@
 
 Chạy:  pytest -q
 """
-import os
-import tempfile
-
-_tmp = tempfile.mkdtemp()
-os.environ["FYDS_DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
-os.environ["FYDS_SECRET"] = "test-secret"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
