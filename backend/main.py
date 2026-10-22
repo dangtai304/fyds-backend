@@ -16,15 +16,24 @@ from .state import build_state
 from .ws_manager import manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("fyds")
 
-# Origin của frontend được gọi API trực tiếp, phân tách bằng dấu phẩy.
-CORS_ORIGINS = [o.strip().rstrip("/") for o in os.getenv(
-    "FYDS_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173"
-).split(",") if o.strip()]
-# Regex cho origin động, ví dụ mọi bản preview Vercel của project:
-#   ^https://fyds-frontend(-[a-z0-9-]+)?\.vercel\.app$
-CORS_ORIGIN_REGEX = os.getenv("FYDS_CORS_ORIGIN_REGEX") or None
-_origin_re = re.compile(CORS_ORIGIN_REGEX) if CORS_ORIGIN_REGEX else None
+# Origin của frontend được gọi API + WebSocket trực tiếp.
+# Mặc định luôn gồm môi trường dev và bản production trên Vercel, để backend chạy đúng
+# kể cả khi chưa đặt biến trên Render. Biến môi trường chỉ BỔ SUNG, không thay thế mặc định.
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173",
+    "https://fyds-frontend.vercel.app",
+]
+DEFAULT_CORS_ORIGIN_REGEX = r"^https://fyds-frontend(-[a-z0-9-]+)?\.vercel\.app$"  # bản preview của Vercel
+
+CORS_ORIGINS = DEFAULT_CORS_ORIGINS + [
+    o.strip().rstrip("/") for o in os.getenv("FYDS_CORS_ORIGINS", "").split(",")
+    if o.strip() and o.strip().rstrip("/") not in DEFAULT_CORS_ORIGINS
+]
+_extra_regex = (os.getenv("FYDS_CORS_ORIGIN_REGEX") or "").strip().strip("'\"")
+CORS_ORIGIN_REGEX = f"(?:{DEFAULT_CORS_ORIGIN_REGEX})|(?:{_extra_regex})" if _extra_regex else DEFAULT_CORS_ORIGIN_REGEX
+_origin_re = re.compile(CORS_ORIGIN_REGEX)
 
 
 def origin_allowed(origin: str | None) -> bool:
@@ -34,7 +43,7 @@ def origin_allowed(origin: str | None) -> bool:
     origin = origin.rstrip("/")
     if "*" in CORS_ORIGINS or origin in CORS_ORIGINS:
         return True
-    return bool(_origin_re and _origin_re.fullmatch(origin))
+    return bool(_origin_re.fullmatch(origin))
 
 
 @asynccontextmanager
@@ -54,6 +63,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(router)
+log.info("CORS origins: %s | regex: %s", ", ".join(CORS_ORIGINS), CORS_ORIGIN_REGEX)
 app.include_router(users_router)
 
 

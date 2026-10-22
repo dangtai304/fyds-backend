@@ -38,6 +38,25 @@ def test_cors_for_vercel_origins(client, origin, allowed):
     assert (r.headers.get("access-control-allow-origin") == origin) is allowed
 
 
+def test_vercel_production_allowed_without_any_env(monkeypatch):
+    """Render service tạo tay, không có biến CORS: bản Vercel production vẫn phải gọi được."""
+    import importlib
+    import backend.main as m
+    monkeypatch.delenv("FYDS_CORS_ORIGINS", raising=False)
+    monkeypatch.delenv("FYDS_CORS_ORIGIN_REGEX", raising=False)
+    m2 = importlib.reload(m)
+    try:
+        assert m2.origin_allowed("https://fyds-frontend.vercel.app")
+        assert m2.origin_allowed("https://fyds-frontend-git-main-x.vercel.app")
+        assert not m2.origin_allowed("https://evil.vercel.app")
+        with TestClient(m2.app) as c:
+            r = c.options("/api/auth/login", headers={"Origin": "https://fyds-frontend.vercel.app",
+                          "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type"})
+            assert r.headers.get("access-control-allow-origin") == "https://fyds-frontend.vercel.app"
+    finally:
+        importlib.reload(m)
+
+
 def test_websocket_rejects_foreign_origin(client):
     with client.websocket_connect("/ws", headers={"Origin": "https://fyds-frontend.vercel.app"}) as ws:
         assert ws.receive_json()["type"] == "state"
