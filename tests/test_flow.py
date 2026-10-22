@@ -187,3 +187,33 @@ def test_health_and_cors_preflight(client):
     assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
     blocked = client.options("/api/state", headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "GET"})
     assert "access-control-allow-origin" not in blocked.headers
+
+
+def test_daily_totals_add_up_including_cancelled_and_overnight(client):
+    from datetime import timedelta
+    from backend.database import SessionLocal
+    from backend.dispatcher import now
+    from backend.models import Trip
+
+    gate = login(client, "baove1", "baove123")
+    disp = login(client, "dieuphoi", "dieuphoi123")
+    trips = [checkin(client, gate, f"SUM-{i}", ["CURTAIN_SIDE", "BOX_TRUCK", "CONTAINER", "CURTAIN_SIDE"][i])["trip"] for i in range(4)]
+    # 1 xe ra cổng, 1 xe hủy (đang chờ), 2 xe còn trong sân
+    client.post(f"/api/trips/{trips[0]['id']}/start", headers=disp)
+    client.post(f"/api/trips/{trips[0]['id']}/complete", headers=disp)
+    client.post(f"/api/trips/{trips[0]['id']}/checkout", headers=gate, json={"gate_out": "GATE_1"})
+    r = client.post(f"/api/trips/{trips[3]['id']}/cancel", headers=disp, json={"reason": "Tài xế rời đi"})
+    assert r.status_code == 200, r.text
+
+    st = client.get("/api/state").json()["stats"]
+    assert st["total_today"] == 4
+    assert (st["today_checked_out"], st["today_in_yard"], st["today_cancelled"]) == (1, 2, 1)
+    assert st["today_checked_out"] + st["today_in_yard"] + st["today_cancelled"] == st["total_today"]
+
+    # Xe vào từ hôm qua vẫn còn trong sân: vẫn hiện ở "Trong sân"
+    with SessionLocal() as db:
+        t = db.get(Trip, trips[1]["id"])
+        t.checked_in_at = now() - timedelta(days=1)
+        db.commit()
+    st = client.get("/api/state").json()["stats"]
+    assert st["total_today"] == 3 and st["in_yard"] == 2 and st["today_in_yard"] == 1

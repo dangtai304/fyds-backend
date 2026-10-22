@@ -53,21 +53,36 @@ def _avg_minutes(pairs) -> float | None:
     return round(mean(vals), 1) if vals else None
 
 
+IN_YARD = (QueueStatus.WAITING.value, QueueStatus.CALLED.value, QueueStatus.LOADING.value, QueueStatus.COMPLETED.value)
+
+
 def compute_stats(db: Session) -> dict:
+    """KPI trong ngày.
+
+    "Tổng xe hôm nay" = số xe check-in hôm nay, chia đúng thành 3 phần cộng lại bằng tổng:
+        today_checked_out + today_in_yard + today_cancelled == total_today
+    Ô "Trong sân" và "Đã ra cổng" là số thực tế lúc này, nên tính cả xe vào từ hôm trước
+    (vd xe vào 23:50 vẫn còn trong sân lúc 00:10 không bị biến mất khỏi dashboard).
+    """
     start = datetime.combine(datetime.now().date(), time.min)
     today = list(db.scalars(select(Trip).where(Trip.checked_in_at >= start)))
-    checked_out = [t for t in today if t.checked_out_at]
+    in_yard_now = list(db.scalars(select(Trip).where(Trip.queue_status.in_(IN_YARD))))
+    out_today = list(db.scalars(select(Trip).where(Trip.checked_out_at >= start)))
     called = [t for t in today if t.called_at]
     jumps = [t for t in called if t.fifo_skipped > 0]
     unjustified = [t for t in jumps if not (t.priority_reason or t.override_reason)]
-    in_yard = [t for t in today if t.queue_status in
-               (QueueStatus.WAITING.value, QueueStatus.CALLED.value, QueueStatus.LOADING.value, QueueStatus.COMPLETED.value)]
+    today_out = sum(1 for t in today if t.queue_status == QueueStatus.CHECKED_OUT.value)
+    today_in = sum(1 for t in today if t.queue_status in IN_YARD)
+    today_cancel = sum(1 for t in today if t.queue_status == QueueStatus.CANCELLED.value)
     return {
         "total_today": len(today),
-        "in_yard": len(in_yard),
-        "checked_out": len(checked_out),
-        "cancelled": sum(1 for t in today if t.queue_status == QueueStatus.CANCELLED.value),
-        "avg_tat_min": _avg_minutes((t.checked_in_at, t.checked_out_at) for t in checked_out),
+        "today_checked_out": today_out,
+        "today_in_yard": today_in,
+        "today_cancelled": today_cancel,
+        "in_yard": len(in_yard_now),            # đang trong sân lúc này (kể cả từ hôm trước)
+        "checked_out": len(out_today),          # ra cổng trong hôm nay
+        "cancelled": today_cancel,
+        "avg_tat_min": _avg_minutes((t.checked_in_at, t.checked_out_at) for t in out_today),
         "avg_wait_min": _avg_minutes((t.checked_in_at, t.called_at) for t in called),
         "avg_load_min": _avg_minutes((t.started_at, t.finished_at) for t in today),
         "called_today": len(called),
